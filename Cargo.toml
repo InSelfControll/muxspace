@@ -51,7 +51,7 @@ rfd = "0.15"
 libc = "0.2"
 
 # GTK + WebKit — embed real browser WebViews inside the app window via GtkOverlay
-glib = "0.18"
+glib = "0.20"
 gtk = "0.18"
 gdk = "0.18"
 webkit2gtk = { version = "2.0", features = ["v2_22"] }
