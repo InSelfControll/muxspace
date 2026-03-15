@@ -33,3 +33,11 @@ build-dir/
 muxspace-linux-x64
 muxspace-darwin-x64
 muxspace-windows-x64.exe
+
+# Images/screenshots
+*.png
+*.jpg
+*.jpeg
+*.gif
+*.svg
+*.webp
