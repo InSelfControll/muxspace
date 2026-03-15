@@ -4,6 +4,8 @@ All notable changes to Muxspace are documented in this file.
 
 ## [Unreleased]
 
+## [0.2.0] — 2026-03-15
+
 ### Added
 
 - **Browser Profile Integration** — Import cookies and detect extensions from Chrome/Chromium browser profiles using SQLite and PBKDF2+AES-CBC decryption
@@ -53,7 +55,7 @@ All notable changes to Muxspace are documented in this file.
 - `sled` 0.34 — embedded database for project persistence
 - `tokio` 1, `serde` 1, `chrono` 0.4, `anyhow` 1
 
-## [0.1.0] — Initial Release
+## [0.1.0] — 2026-03-15
 
 - Initial commit: Muxspace workspace manager with Dioxus desktop
 - Simplified repo structure to Dioxus-only app
