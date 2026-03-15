@@ -378,10 +378,20 @@ fn Header() -> Element {
 #[component]
 fn ProjectView(project: Project) -> Element {
     let mut state = use_context::<Signal<AppState>>();
-    let current_workspace = &project.workspaces[project.active_workspace_idx];
+    let workspaces = project.workspaces.clone();
+    let current_workspace = workspaces[project.active_workspace_idx].clone();
     let focused_pane_id = state.read().focused_pane_id.clone();
     let mut show_add_browser = use_signal(|| false);
     let mut browser_url_input = use_signal(|| String::from("http://localhost:3000"));
+    let mut editing_project_name = use_signal(|| false);
+    let mut project_name_input = use_signal(|| String::new());
+    let mut editing_ws_idx = use_signal(|| Option::<usize>::None);
+    let mut ws_name_input = use_signal(|| String::new());
+    let project_name = project.name.clone();
+    let project_name_for_edit = project_name.clone();
+    let project_id_rename = project.id.clone();
+    let project_id_rename2 = project.id.clone();
+    let active_ws_idx = project.active_workspace_idx;
 
     rsx! {
         div {
@@ -392,9 +402,57 @@ fn ProjectView(project: Project) -> Element {
             div {
                 style: "display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.75rem;",
 
-                h2 {
-                    style: "margin: 0; font-size: 1.1rem;",
-                    "{project.name}"
+                if *editing_project_name.read() {
+                    input {
+                        style: "margin: 0; font-size: 1.1rem; font-weight: bold; padding: 0.1rem 0.4rem; \
+                                background: #0f0f1a; border: 1px solid #6366f1; border-radius: 4px; \
+                                color: #eaeaf0; outline: none;",
+                        r#type: "text",
+                        value: "{project_name_input}",
+                        autofocus: true,
+                        oninput: move |evt| project_name_input.set(evt.value()),
+                        onkeydown: move |evt: KeyboardEvent| {
+                            if evt.key() == Key::Enter {
+                                let new = project_name_input.read().trim().to_string();
+                                if !new.is_empty() {
+                                    state.write().rename_project(&project_id_rename, &new);
+                                }
+                                editing_project_name.set(false);
+                            }
+                            if evt.key() == Key::Escape {
+                                editing_project_name.set(false);
+                            }
+                        },
+                        onfocusout: move |_| {
+                            let new = project_name_input.read().trim().to_string();
+                            if !new.is_empty() {
+                                state.write().rename_project(&project_id_rename2, &new);
+                            }
+                            editing_project_name.set(false);
+                        },
+                    }
+                } else {
+                    h2 {
+                        style: "margin: 0; font-size: 1.1rem; cursor: default;",
+                        ondoubleclick: move |_| {
+                            project_name_input.set(project_name.clone());
+                            editing_project_name.set(true);
+                        },
+                        "{project_name}"
+                    }
+                }
+
+                // Rename project button
+                if !*editing_project_name.read() {
+                    button {
+                        style: "padding: 0 0.3rem; background: transparent; border: none; \
+                                color: #666; cursor: pointer; font-size: 0.8rem; opacity: 0.6; margin-left: 0.3rem;",
+                        onclick: move |_| {
+                            project_name_input.set(project_name_for_edit.clone());
+                            editing_project_name.set(true);
+                        },
+                        "\u{270E}"
+                    }
                 }
 
                 div {
@@ -484,38 +542,104 @@ fn ProjectView(project: Project) -> Element {
                 class: "workspace-tabs",
                 style: "display: flex; gap: 0.25rem; margin-bottom: 0.75rem; flex-wrap: wrap;",
 
-                for (idx, workspace) in project.workspaces.iter().enumerate() {
-                    div {
-                        key: "{workspace.id}",
-                        style: "display: flex; align-items: center; gap: 0;",
+                for (idx, workspace) in workspaces.iter().enumerate() {
+                    {
+                        let ws_name = workspace.name.clone();
+                        let ws_name_for_edit = ws_name.clone();
+                        let ws_id = workspace.id.clone();
+                        rsx! {
+                            div {
+                                key: "{ws_id}",
+                                style: "display: flex; align-items: center; gap: 0;",
 
-                        button {
-                            style: if idx == project.active_workspace_idx {
-                                "padding: 0.4rem 0.8rem; background: #6366f1; color: white; border: none; border-radius: 6px 0 0 6px; cursor: pointer; font-size: 0.85rem;"
-                            } else {
-                                "padding: 0.4rem 0.8rem; background: #1e1e3a; color: #a0a0b0; border: none; border-radius: 6px 0 0 6px; cursor: pointer; font-size: 0.85rem;"
-                            },
-                            onclick: move |_| {
-                                state.write().switch_workspace(idx);
-                            },
-                            if idx < 9 {
-                                "{idx + 1}. {workspace.name}"
-                            } else {
-                                "{workspace.name}"
-                            }
-                        }
-
-                        if project.workspaces.len() > 1 {
-                            button {
-                                style: if idx == project.active_workspace_idx {
-                                    "padding: 0.4rem 0.4rem; background: #6366f1; color: rgba(255,255,255,0.6); border: none; border-radius: 0 6px 6px 0; cursor: pointer; font-size: 0.7rem;"
+                                if *editing_ws_idx.read() == Some(idx) {
+                                    input {
+                                        style: "padding: 0.3rem 0.5rem; background: #0f0f1a; border: 1px solid #6366f1; \
+                                                border-radius: 6px; color: #eaeaf0; font-size: 0.85rem; outline: none; \
+                                                width: 120px;",
+                                        r#type: "text",
+                                        value: "{ws_name_input}",
+                                        autofocus: true,
+                                        oninput: move |evt| ws_name_input.set(evt.value()),
+                                        onkeydown: move |evt: KeyboardEvent| {
+                                            if evt.key() == Key::Enter {
+                                                let new = ws_name_input.read().trim().to_string();
+                                                if !new.is_empty() {
+                                                    state.write().rename_workspace(idx, &new);
+                                                }
+                                                editing_ws_idx.set(None);
+                                            }
+                                            if evt.key() == Key::Escape {
+                                                editing_ws_idx.set(None);
+                                            }
+                                        },
+                                        onfocusout: move |_| {
+                                            let new = ws_name_input.read().trim().to_string();
+                                            if !new.is_empty() {
+                                                state.write().rename_workspace(idx, &new);
+                                            }
+                                            editing_ws_idx.set(None);
+                                        },
+                                    }
                                 } else {
-                                    "padding: 0.4rem 0.4rem; background: #1e1e3a; color: #666; border: none; border-radius: 0 6px 6px 0; cursor: pointer; font-size: 0.7rem;"
-                                },
-                                onclick: move |_| {
-                                    state.write().remove_workspace(idx);
-                                },
-                                "×"
+                                    button {
+                                        style: if idx == active_ws_idx {
+                                            "padding: 0.4rem 0.8rem; background: #6366f1; color: white; border: none; border-radius: 6px 0 0 6px; cursor: pointer; font-size: 0.85rem;"
+                                        } else {
+                                            "padding: 0.4rem 0.8rem; background: #1e1e3a; color: #a0a0b0; border: none; border-radius: 6px 0 0 6px; cursor: pointer; font-size: 0.85rem;"
+                                        },
+                                        onclick: move |_| {
+                                            state.write().switch_workspace(idx);
+                                        },
+                                        ondoubleclick: {
+                                            let ws_name = ws_name.clone();
+                                            move |evt: MouseEvent| {
+                                                evt.stop_propagation();
+                                                ws_name_input.set(ws_name.clone());
+                                                editing_ws_idx.set(Some(idx));
+                                            }
+                                        },
+                                        if idx < 9 {
+                                            "{idx + 1}. {ws_name}"
+                                        } else {
+                                            "{ws_name}"
+                                        }
+                                    }
+                                }
+
+                                // Rename workspace button
+                                if *editing_ws_idx.read() != Some(idx) {
+                                    button {
+                                        style: if idx == active_ws_idx {
+                                            "padding: 0.4rem 0.25rem; background: #6366f1; color: rgba(255,255,255,0.5); border: none; cursor: pointer; font-size: 0.65rem;"
+                                        } else {
+                                            "padding: 0.4rem 0.25rem; background: #1e1e3a; color: #555; border: none; cursor: pointer; font-size: 0.65rem;"
+                                        },
+                                        onclick: {
+                                            let ws_name = ws_name_for_edit.clone();
+                                            move |evt: MouseEvent| {
+                                                evt.stop_propagation();
+                                                ws_name_input.set(ws_name.clone());
+                                                editing_ws_idx.set(Some(idx));
+                                            }
+                                        },
+                                        "\u{270E}"
+                                    }
+                                }
+
+                                if workspaces.len() > 1 && *editing_ws_idx.read() != Some(idx) {
+                                    button {
+                                        style: if idx == active_ws_idx {
+                                            "padding: 0.4rem 0.4rem; background: #6366f1; color: rgba(255,255,255,0.6); border: none; border-radius: 0 6px 6px 0; cursor: pointer; font-size: 0.7rem;"
+                                        } else {
+                                            "padding: 0.4rem 0.4rem; background: #1e1e3a; color: #666; border: none; border-radius: 0 6px 6px 0; cursor: pointer; font-size: 0.7rem;"
+                                        },
+                                        onclick: move |_| {
+                                            state.write().remove_workspace(idx);
+                                        },
+                                        "\u{00d7}"
+                                    }
+                                }
                             }
                         }
                     }

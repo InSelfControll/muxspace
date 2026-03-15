@@ -39,6 +39,9 @@ pub struct Pane {
     pub kind: PaneKind,
     /// Only used for Terminal panes
     pub pty_id: Option<String>,
+    /// User-assigned custom name (overrides auto-detected title)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub custom_name: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -234,6 +237,7 @@ impl AppState {
             id: pane_id.clone(),
             kind: PaneKind::Terminal { command },
             pty_id: None,
+            custom_name: None,
         };
 
         if let Some(project) = self.active_project_mut() {
@@ -257,6 +261,7 @@ impl AppState {
                 active_tab: 0,
             },
             pty_id: None,
+            custom_name: None,
         };
 
         if let Some(project) = self.active_project_mut() {
@@ -374,6 +379,7 @@ impl AppState {
                     id: format!("pane-{}", chrono::Utc::now().timestamp_millis()),
                     kind: PaneKind::Terminal { command: None },
                     pty_id: None,
+                    custom_name: None,
                 }],
                 cwd: project.workspaces[0].cwd.clone(),
             };
@@ -395,6 +401,7 @@ impl AppState {
                     id: format!("pane-{}", ts),
                     kind: PaneKind::Terminal { command: None },
                     pty_id: None,
+                    custom_name: None,
                 }],
                 cwd,
             }],
@@ -404,6 +411,35 @@ impl AppState {
         self.projects.push(project.clone());
         self.save_projects_blocking();
         project
+    }
+
+    /// Rename a project
+    pub fn rename_project(&mut self, project_id: &str, new_name: &str) {
+        if let Some(project) = self.projects.iter_mut().find(|p| p.id == project_id) {
+            project.name = new_name.to_string();
+        }
+        self.save_projects_blocking();
+    }
+
+    /// Rename a pane in the active workspace
+    pub fn rename_pane(&mut self, pane_id: &str, new_name: &str) {
+        if let Some(project) = self.active_project_mut() {
+            let ws_idx = project.active_workspace_idx;
+            if let Some(pane) = project.workspaces[ws_idx].panes.iter_mut().find(|p| p.id == pane_id) {
+                pane.custom_name = if new_name.is_empty() { None } else { Some(new_name.to_string()) };
+            }
+        }
+        self.save_projects_blocking();
+    }
+
+    /// Rename a workspace in the active project
+    pub fn rename_workspace(&mut self, ws_idx: usize, new_name: &str) {
+        if let Some(project) = self.active_project_mut() {
+            if let Some(ws) = project.workspaces.get_mut(ws_idx) {
+                ws.name = new_name.to_string();
+            }
+        }
+        self.save_projects_blocking();
     }
 
     /// Delete a project and clean up its PTY sessions

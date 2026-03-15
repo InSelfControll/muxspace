@@ -8,9 +8,34 @@ use crate::state::{AppState, Pane, PaneKind};
 #[component]
 pub fn PaneView(pane: Pane, focused: bool) -> Element {
     let mut state = use_context::<Signal<AppState>>();
-    let pane_id = pane.id.clone();
+    let pane_id_focus = pane.id.clone();
     let pane_id_close = pane.id.clone();
+    let pane_id_rename = pane.id.clone();
+    let pane_id_rename2 = pane.id.clone();
     let is_browser = matches!(pane.kind, PaneKind::Browser { .. });
+    let custom_name = pane.custom_name.clone();
+    let pty_id_for_title = pane.pty_id.clone().unwrap_or_else(|| pane.id.clone());
+
+    let mut editing_name = use_signal(|| false);
+    let mut name_input = use_signal(|| String::new());
+
+    // Resolve display title: custom_name > OSC title > "Terminal"
+    let display_title = if let Some(ref name) = custom_name {
+        name.clone()
+    } else {
+        let osc_title = state.read().screen_buffers.get(&pty_id_for_title)
+            .map(|b| b.title.clone())
+            .unwrap_or_default();
+        if !osc_title.is_empty() {
+            osc_title
+        } else {
+            match &pane.kind {
+                PaneKind::Terminal { command: Some(cmd) } => format!("Terminal: {cmd}"),
+                _ => "Terminal".to_string(),
+            }
+        }
+    };
+    let display_title_for_rename = display_title.clone();
 
     let border_color = if focused { "#6366f1" } else { "#2e2e4a" };
 
@@ -20,7 +45,7 @@ pub fn PaneView(pane: Pane, focused: bool) -> Element {
             style: "background: #16162a; border: 2px solid {border_color}; border-radius: 8px; display: flex; flex-direction: column; overflow: hidden; height: 100%; min-height: 300px;",
 
             onclick: move |_| {
-                state.write().focused_pane_id = Some(pane_id.clone());
+                state.write().focused_pane_id = Some(pane_id_focus.clone());
             },
 
             // Pane header
@@ -29,22 +54,61 @@ pub fn PaneView(pane: Pane, focused: bool) -> Element {
                 style: "padding: 0.35rem 0.75rem; background: #1e1e3a; border-bottom: 1px solid #2e2e4a; display: flex; justify-content: space-between; align-items: center; flex-shrink: 0;",
 
                 if !is_browser {
-                    span {
-                        style: "font-weight: 500; font-size: 0.85rem;",
-                        match &pane.kind {
-                            PaneKind::Terminal { command } => {
-                                if let Some(cmd) = command {
-                                    format!("Terminal: {cmd}")
-                                } else {
-                                    "Terminal".to_string()
+                    if *editing_name.read() {
+                        input {
+                            style: "font-weight: 500; font-size: 0.85rem; padding: 0.1rem 0.3rem; \
+                                    background: #0f0f1a; border: 1px solid #6366f1; border-radius: 4px; \
+                                    color: #eaeaf0; outline: none; width: 180px;",
+                            r#type: "text",
+                            value: "{name_input}",
+                            autofocus: true,
+                            onclick: |evt| evt.stop_propagation(),
+                            oninput: move |evt| name_input.set(evt.value()),
+                            onkeydown: move |evt: KeyboardEvent| {
+                                if evt.key() == Key::Enter {
+                                    let new = name_input.read().trim().to_string();
+                                    state.write().rename_pane(&pane_id_rename, &new);
+                                    editing_name.set(false);
                                 }
-                            }
-                            _ => String::new(),
+                                if evt.key() == Key::Escape {
+                                    editing_name.set(false);
+                                }
+                            },
+                            onfocusout: move |_| {
+                                let new = name_input.read().trim().to_string();
+                                state.write().rename_pane(&pane_id_rename2, &new);
+                                editing_name.set(false);
+                            },
+                        }
+                    } else {
+                        span {
+                            style: "font-weight: 500; font-size: 0.85rem; cursor: default; overflow: hidden; \
+                                    text-overflow: ellipsis; white-space: nowrap; max-width: 300px;",
+                            ondoubleclick: move |evt| {
+                                evt.stop_propagation();
+                                name_input.set(display_title.clone());
+                                editing_name.set(true);
+                            },
+                            "{display_title}"
                         }
                     }
                 }
 
-            if is_browser {
+                // Rename button for terminal panes
+                if !is_browser && !*editing_name.read() {
+                    button {
+                        style: "padding: 0 0.3rem; background: transparent; border: none; \
+                                color: #666; cursor: pointer; font-size: 0.75rem; opacity: 0.6; flex-shrink: 0;",
+                        onclick: move |evt| {
+                            evt.stop_propagation();
+                            name_input.set(display_title_for_rename.clone());
+                            editing_name.set(true);
+                        },
+                        "\u{270E}"
+                    }
+                }
+
+                if is_browser {
                     BrowserNavBar { pane_id: pane.id.clone() }
                 }
 
@@ -209,14 +273,30 @@ fn BrowserNavBar(pane_id: String) -> Element {
 fn TerminalContent(pane_id: String, pty_id: Option<String>, focused: bool) -> Element {
     let state = use_context::<Signal<AppState>>();
     let pty_id = pty_id.unwrap_or_else(|| pane_id.clone());
+    let term_div_id = format!("term-{}", pane_id);
 
     let screen = state.read().screen_buffers.get(&pty_id).cloned();
 
+    // Auto-focus the terminal div when this pane is focused.
+    // Skip if user is typing in an input (e.g. rename field) so we don't steal focus.
+    if focused {
+        let focus_id = term_div_id.clone();
+        eval(&format!(
+            "setTimeout(function(){{ var el=document.getElementById('{}'); \
+             if(el && document.activeElement!==el && \
+             document.activeElement.tagName!=='INPUT' && \
+             document.activeElement.tagName!=='TEXTAREA') el.focus(); }}, 30)",
+            focus_id
+        ));
+    }
+
     rsx! {
         div {
+            id: "{term_div_id}",
             class: "terminal-screen",
             style: "flex: 1; overflow-y: auto; padding: 2px; font-family: 'SF Mono', Monaco, 'Cascadia Code', 'Fira Code', monospace; font-size: 13px; line-height: 1.2; background: #0a0a14; color: #eaeaf0; cursor: text; white-space: pre; outline: none;",
             tabindex: "0",
+            prevent_default: "onkeydown",
 
             onkeydown: {
                 let pty_id = pty_id.clone();

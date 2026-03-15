@@ -4,6 +4,34 @@ All notable changes to Muxspace are documented in this file.
 
 ## [Unreleased]
 
+## [0.3.0] — 2026-03-15
+
+### Added
+
+- **Terminal Session Persistence (tmux)** — Terminal panes now run inside tmux sessions (dedicated `muxspace` socket). When the app restarts, tmux reattaches to existing sessions so running processes (e.g. `claude`, `htop`) survive. Falls back to direct shell if tmux is not installed
+- **Visible Rename Buttons** — Added ✎ pencil icons next to project names (sidebar & main view), workspace tabs, and terminal pane headers for one-click rename; double-click still works
+- **VTE Parser: Cursor Horizontal Absolute (CHA)** — `CSI G` — critical for bash readline history navigation
+- **VTE Parser: Cursor Next/Previous Line** — `CSI E` (CNL), `CSI F` (CPL)
+- **VTE Parser: Line Position Absolute** — `CSI d` (VPA)
+- **VTE Parser: Insert/Delete Characters** — `CSI @` (ICH), `CSI P` (DCH)
+- **VTE Parser: Erase Characters** — `CSI X` (ECH)
+- **VTE Parser: Insert/Delete Lines** — `CSI L` (IL), `CSI M` (DL)
+- **VTE Parser: Scroll Up/Down** — `CSI S` (SU), `CSI T` (SD)
+- **VTE Parser: Erase in Line mode 1** — `CSI 1 K` (erase from start of line to cursor)
+- **VTE Parser: Erase in Display mode 1** — `CSI 1 J` (erase from start of screen to cursor)
+- **VTE Parser: Tab stops** — `\t` (0x09) now advances cursor to next 8-column tab stop
+- **VTE Parser: BEL** — `\x07` acknowledged (no-op, suppresses garbled output)
+- **VTE Parser: DEC private mode stubs** — `CSI h/l/r/n/c` acknowledged to prevent unknown-sequence noise
+- **Terminal Auto-Focus** — Focused terminal pane automatically receives DOM keyboard focus via `eval` + `setTimeout`; skips focus steal when an INPUT/TEXTAREA is active (e.g. rename field)
+- **Terminal prevent_default** — Added `prevent_default: "onkeydown"` on the terminal div so Tab sends `\t` to the PTY and arrow keys don't trigger browser scroll
+- **Muxspace tmux config** — Auto-created at `~/.config/muxspace/tmux.conf` with status bar off, `escape-time 0`, prefix remapped to `Ctrl+]`, mouse enabled, 50k history
+
+### Fixed
+
+- **Tab key not working in terminal** — Browser was intercepting Tab for focus navigation before the terminal handler could send `\t` to the PTY
+- **Arrow keys creating new lines instead of navigating history** — Missing `CSI G` (CHA) command meant bash readline's cursor repositioning was silently dropped, causing garbled output when pressing Up/Down
+- **Terminal rename immediately exiting edit mode** — Auto-focus JavaScript was stealing focus from the rename input field every 30ms; now checks `document.activeElement.tagName` before focusing
+
 ## [0.2.0] — 2026-03-15
 
 ### Added
@@ -25,6 +53,10 @@ All notable changes to Muxspace are documented in this file.
 - **Prefix Mode Indicator** — Fixed overlay at bottom-right showing available prefix-mode shortcuts when prefix key is active
 - **Welcome View** — Landing page with keyboard shortcut reference when no project is selected
 - **Native File Dialogs** — Added `rfd = "0.15"` for cross-platform file/folder picker support
+- **Terminal Auto-Title** — Terminal pane headers automatically update to reflect the running program and directory via OSC 0/2 escape sequences (e.g. running `claude` shows "Claude: ~/project" in the pane header)
+- **Rename Projects** — Double-click a project name in the sidebar or the project title in the main view to rename it inline
+- **Rename Workspaces** — Double-click a workspace tab to rename it inline
+- **Rename Terminal Panes** — Double-click a terminal pane's header title to set a custom name; custom names override auto-detected titles and are persisted
 
 ### Changed
 

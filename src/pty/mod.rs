@@ -2,9 +2,33 @@ use anyhow::{Context, Result};
 use portable_pty::{native_pty_system, CommandBuilder, MasterPty, PtySize};
 use std::collections::HashMap;
 use std::io::{Read, Write};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, LazyLock, Mutex};
 use vte::{Params, Parser, Perform};
+
+/// Whether tmux is available on this system (checked once at startup).
+static TMUX_AVAILABLE: LazyLock<bool> = LazyLock::new(|| which::which("tmux").is_ok());
+
+/// Path to the Muxspace tmux config file (created on first use).
+static TMUX_CONFIG: LazyLock<PathBuf> = LazyLock::new(|| {
+    let config_dir = dirs::config_dir()
+        .unwrap_or_else(|| PathBuf::from("/tmp"))
+        .join("muxspace");
+    let _ = std::fs::create_dir_all(&config_dir);
+    let config_path = config_dir.join("tmux.conf");
+    if !config_path.exists() {
+        let config = "\
+# Muxspace tmux config \u{2014} transparent session wrapper\n\
+set -g status off\n\
+set -g escape-time 0\n\
+set -g prefix C-]\n\
+unbind C-b\n\
+set -g mouse on\n\
+set -g history-limit 50000\n";
+        let _ = std::fs::write(&config_path, config);
+    }
+    config_path
+});
 
 // ── Global PTY manager ──────────────────────────────────────────────────────
 
@@ -28,7 +52,7 @@ impl PtyManager {
         if self.sessions.contains_key(pane_id) {
             return Ok(()); // already running
         }
-        let (session, rx) = PtySession::spawn(cwd, cmd, 24, 80)?;
+        let (session, rx) = PtySession::spawn(pane_id, cwd, cmd, 24, 80)?;
         self.sessions.insert(pane_id.to_string(), session);
         self.receivers.insert(pane_id.to_string(), rx);
         tracing::info!("Spawned PTY for pane {}", pane_id);
@@ -60,6 +84,8 @@ impl PtyManager {
     pub fn remove_pane(&mut self, pane_id: &str) {
         self.sessions.remove(pane_id);
         self.receivers.remove(pane_id);
+        // Kill the tmux session so it doesn't linger after the pane is closed
+        kill_tmux_session(pane_id);
     }
 }
 
@@ -83,6 +109,8 @@ pub struct ScreenBuffer {
     pub cursor_row: usize,
     pub cursor_col: usize,
     pub scrollback: Vec<Vec<Cell>>,
+    /// Terminal title set via OSC 0/2 escape sequences (e.g. by the shell or running program).
+    pub title: String,
     max_scrollback: usize,
     style: CellStyle,
     parser: Parser,
@@ -104,6 +132,7 @@ impl Clone for ScreenBuffer {
             cursor_row: self.cursor_row,
             cursor_col: self.cursor_col,
             scrollback: self.scrollback.clone(),
+            title: self.title.clone(),
             max_scrollback: self.max_scrollback,
             style: self.style.clone(),
             parser: Parser::new(), // fresh parser for the clone
@@ -135,6 +164,7 @@ impl ScreenBuffer {
             cursor_row: 0,
             cursor_col: 0,
             scrollback: Vec::new(),
+            title: String::new(),
             max_scrollback: 10_000,
             style: CellStyle::default(),
             parser: Parser::new(),
@@ -193,11 +223,19 @@ impl Perform for ScreenBuffer {
                 }
             }
             b'\r' => self.cursor_col = 0,
+            b'\t' => {
+                // Advance to next tab stop (every 8 columns)
+                self.cursor_col = ((self.cursor_col / 8) + 1) * 8;
+                if self.cursor_col >= self.cols {
+                    self.cursor_col = self.cols.saturating_sub(1);
+                }
+            }
             0x08 => {
                 if self.cursor_col > 0 {
                     self.cursor_col -= 1;
                 }
             }
+            0x07 => {} // BEL — bell, ignore
             _ => {}
         }
     }
@@ -208,27 +246,123 @@ impl Perform for ScreenBuffer {
         }
 
         match action {
+            // CUU — Cursor Up
             'A' => self.cursor_row = self.cursor_row.saturating_sub(p(params, 0, 1)),
+            // CUD — Cursor Down
             'B' => self.cursor_row = (self.cursor_row + p(params, 0, 1)).min(self.rows.saturating_sub(1)),
+            // CUF — Cursor Forward
             'C' => self.cursor_col = (self.cursor_col + p(params, 0, 1)).min(self.cols.saturating_sub(1)),
+            // CUB — Cursor Back
             'D' => self.cursor_col = self.cursor_col.saturating_sub(p(params, 0, 1)),
+            // CNL — Cursor Next Line
+            'E' => {
+                self.cursor_row = (self.cursor_row + p(params, 0, 1)).min(self.rows.saturating_sub(1));
+                self.cursor_col = 0;
+            }
+            // CPL — Cursor Previous Line
+            'F' => {
+                self.cursor_row = self.cursor_row.saturating_sub(p(params, 0, 1));
+                self.cursor_col = 0;
+            }
+            // CHA — Cursor Horizontal Absolute
+            'G' => {
+                self.cursor_col = p(params, 0, 1).saturating_sub(1).min(self.cols.saturating_sub(1));
+            }
+            // CUP — Cursor Position
             'H' | 'f' => {
                 self.cursor_row = p(params, 0, 1).saturating_sub(1).min(self.rows.saturating_sub(1));
                 self.cursor_col = p(params, 1, 1).saturating_sub(1).min(self.cols.saturating_sub(1));
             }
+            // ED — Erase in Display
             'J' => match p(params, 0, 0) {
                 0 => {
                     for c in self.cursor_col..self.cols { self.grid[self.cursor_row][c] = Cell::default(); }
                     for r in (self.cursor_row + 1)..self.rows { self.grid[r] = vec![Cell::default(); self.cols]; }
                 }
+                1 => {
+                    for r in 0..self.cursor_row { self.grid[r] = vec![Cell::default(); self.cols]; }
+                    for c in 0..=self.cursor_col.min(self.cols.saturating_sub(1)) { self.grid[self.cursor_row][c] = Cell::default(); }
+                }
                 2 | 3 => { for r in 0..self.rows { self.grid[r] = vec![Cell::default(); self.cols]; } }
                 _ => {}
             },
+            // EL — Erase in Line
             'K' => match p(params, 0, 0) {
                 0 => { for c in self.cursor_col..self.cols { self.grid[self.cursor_row][c] = Cell::default(); } }
+                1 => { for c in 0..=self.cursor_col.min(self.cols.saturating_sub(1)) { self.grid[self.cursor_row][c] = Cell::default(); } }
                 2 => { self.grid[self.cursor_row] = vec![Cell::default(); self.cols]; }
                 _ => {}
             },
+            // IL — Insert Lines
+            'L' => {
+                let n = p(params, 0, 1);
+                for _ in 0..n {
+                    if self.cursor_row < self.rows {
+                        self.grid.insert(self.cursor_row, vec![Cell::default(); self.cols]);
+                        if self.grid.len() > self.rows { self.grid.pop(); }
+                    }
+                }
+            }
+            // DL — Delete Lines
+            'M' => {
+                let n = p(params, 0, 1);
+                for _ in 0..n {
+                    if self.cursor_row < self.grid.len() {
+                        self.grid.remove(self.cursor_row);
+                        self.grid.push(vec![Cell::default(); self.cols]);
+                    }
+                }
+            }
+            // DCH — Delete Characters
+            'P' => {
+                let n = p(params, 0, 1);
+                let row = &mut self.grid[self.cursor_row];
+                for _ in 0..n {
+                    if self.cursor_col < row.len() {
+                        row.remove(self.cursor_col);
+                        row.push(Cell::default());
+                    }
+                }
+            }
+            // SU — Scroll Up
+            'S' => {
+                let n = p(params, 0, 1);
+                for _ in 0..n { self.scroll_up(); }
+            }
+            // SD — Scroll Down
+            'T' => {
+                let n = p(params, 0, 1);
+                for _ in 0..n {
+                    if !self.grid.is_empty() {
+                        self.grid.pop();
+                        self.grid.insert(0, vec![Cell::default(); self.cols]);
+                    }
+                }
+            }
+            // ECH — Erase Characters
+            'X' => {
+                let n = p(params, 0, 1);
+                for i in 0..n {
+                    let col = self.cursor_col + i;
+                    if col < self.cols {
+                        self.grid[self.cursor_row][col] = Cell::default();
+                    }
+                }
+            }
+            // ICH — Insert Characters
+            '@' => {
+                let n = p(params, 0, 1);
+                let row = &mut self.grid[self.cursor_row];
+                for _ in 0..n {
+                    row.insert(self.cursor_col, Cell::default());
+                    if row.len() > self.cols { row.pop(); }
+                }
+            }
+            // VPA — Line Position Absolute
+            'd' => {
+                self.cursor_row = p(params, 0, 1).saturating_sub(1).min(self.rows.saturating_sub(1));
+            }
+            // SGR — Select Graphic Rendition
             'm' => {
                 let values: Vec<u16> = params.iter().flat_map(|s| s.iter().copied()).collect();
                 let mut i = 0;
@@ -248,6 +382,8 @@ impl Perform for ScreenBuffer {
                     i += 1;
                 }
             }
+            // DECSTBM, DEC private modes, DSR, DA — acknowledge but ignore
+            'h' | 'l' | 'r' | 'n' | 'c' => {}
             _ => {}
         }
     }
@@ -255,7 +391,18 @@ impl Perform for ScreenBuffer {
     fn hook(&mut self, _: &Params, _: &[u8], _: bool, _: char) {}
     fn put(&mut self, _: u8) {}
     fn unhook(&mut self) {}
-    fn osc_dispatch(&mut self, _: &[&[u8]], _: bool) {}
+    fn osc_dispatch(&mut self, params: &[&[u8]], _bell_terminated: bool) {
+        // OSC 0 = set icon name + window title
+        // OSC 2 = set window title
+        if params.len() >= 2 {
+            let cmd = params[0];
+            if cmd == b"0" || cmd == b"2" {
+                if let Ok(title) = std::str::from_utf8(params[1]) {
+                    self.title = title.to_string();
+                }
+            }
+        }
+    }
     fn esc_dispatch(&mut self, _: &[u8], _: bool, _: u8) {}
 }
 
@@ -267,8 +414,22 @@ pub struct PtySession {
     master: Box<dyn MasterPty + Send>,
 }
 
+/// Kill a tmux session for the given pane ID (no-op if tmux not available).
+fn kill_tmux_session(pane_id: &str) {
+    if !*TMUX_AVAILABLE {
+        return;
+    }
+    let session_name = format!("mux-{}", pane_id);
+    let _ = std::process::Command::new("tmux")
+        .args(["-L", "muxspace", "kill-session", "-t", &session_name])
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .spawn();
+}
+
 impl PtySession {
     pub fn spawn(
+        pane_id: &str,
         cwd: &Path,
         command: Option<&str>,
         rows: u16,
@@ -279,12 +440,24 @@ impl PtySession {
             .openpty(PtySize { rows, cols, pixel_width: 0, pixel_height: 0 })
             .context("opening PTY")?;
 
-        let shell = command
-            .map(|s| s.to_string())
-            .or_else(|| std::env::var("SHELL").ok())
-            .unwrap_or_else(|| "/bin/sh".to_string());
-
-        let mut cmd = CommandBuilder::new(&shell);
+        let mut cmd = if *TMUX_AVAILABLE {
+            // Use tmux with a dedicated socket so sessions persist across app restarts
+            let session_name = format!("mux-{}", pane_id);
+            let config = TMUX_CONFIG.to_string_lossy().to_string();
+            let mut c = CommandBuilder::new("tmux");
+            c.args(["-L", "muxspace", "-f", &config, "new-session", "-A", "-s", &session_name]);
+            if let Some(initial_cmd) = command {
+                c.arg(initial_cmd);
+            }
+            tracing::info!("PTY using tmux session '{}'", session_name);
+            c
+        } else {
+            let shell = command
+                .map(|s| s.to_string())
+                .or_else(|| std::env::var("SHELL").ok())
+                .unwrap_or_else(|| "/bin/sh".to_string());
+            CommandBuilder::new(&shell)
+        };
         cmd.cwd(cwd);
 
         let _child = pair.slave.spawn_command(cmd).context("spawning shell")?;

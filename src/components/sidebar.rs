@@ -113,8 +113,13 @@ pub fn sidebar() -> Element {
 #[component]
 fn ProjectItem(project: crate::state::Project, active: bool) -> Element {
     let mut state = use_context::<Signal<AppState>>();
-    let project_id = project.id.clone();
+    let project_id_switch = project.id.clone();
+    let project_id_rename = project.id.clone();
+    let project_id_rename2 = project.id.clone();
     let project_id_del = project.id.clone();
+    let mut editing = use_signal(|| false);
+    let mut edit_name = use_signal(|| String::new());
+    let project_name_for_edit = project.name.clone();
 
     rsx! {
         div {
@@ -126,12 +131,64 @@ fn ProjectItem(project: crate::state::Project, active: bool) -> Element {
             },
 
             onclick: move |_| {
-                state.write().switch_project_blocking(&project_id);
+                if !*editing.read() {
+                    state.write().switch_project_blocking(&project_id_switch);
+                }
             },
 
-            span {
-                style: "flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;",
-                "{project.name}"
+            if *editing.read() {
+                input {
+                    style: "flex: 1; padding: 0.15rem 0.4rem; background: #0f0f1a; border: 1px solid #6366f1; \
+                            border-radius: 4px; color: #eaeaf0; font-size: 0.85rem; outline: none;",
+                    r#type: "text",
+                    value: "{edit_name}",
+                    autofocus: true,
+                    onclick: |evt| evt.stop_propagation(),
+                    oninput: move |evt| edit_name.set(evt.value()),
+                    onkeydown: move |evt: KeyboardEvent| {
+                        if evt.key() == Key::Enter {
+                            let new = edit_name.read().trim().to_string();
+                            if !new.is_empty() {
+                                state.write().rename_project(&project_id_rename, &new);
+                            }
+                            editing.set(false);
+                        }
+                        if evt.key() == Key::Escape {
+                            editing.set(false);
+                        }
+                    },
+                    onfocusout: move |_| {
+                        let new = edit_name.read().trim().to_string();
+                        if !new.is_empty() {
+                            state.write().rename_project(&project_id_rename2, &new);
+                        }
+                        editing.set(false);
+                    },
+                }
+            } else {
+                span {
+                    style: "flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;",
+                    ondoubleclick: move |evt| {
+                        evt.stop_propagation();
+                        edit_name.set(project.name.clone());
+                        editing.set(true);
+                    },
+                    "{project.name}"
+                }
+            }
+
+            // Rename button
+            if !*editing.read() {
+                button {
+                    style: "padding: 0 0.25rem; background: transparent; border: none; \
+                            color: #666; cursor: pointer; font-size: 0.7rem; opacity: 0.5; flex-shrink: 0;",
+                    onclick: move |evt| {
+                        evt.stop_propagation();
+                        edit_name.set(project_name_for_edit.clone());
+                        editing.set(true);
+                    },
+                    "\u{270E}"
+                }
             }
 
             span {
