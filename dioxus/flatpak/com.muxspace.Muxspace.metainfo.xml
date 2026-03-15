@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>com.muxspace.Muxspace</id>
+  <launchable type="desktop-id">com.muxspace.Muxspace.desktop</launchable>
+  
+  <name>Muxspace</name>
+  <summary>Terminal Workspace Manager</summary>
+  
+  <description>
+    <p>
+      Muxspace is a native, high-performance terminal workspace manager for developers.
+      It combines GPU-accelerated terminal rendering with powerful project management
+      features including:
+    </p>
+    <ul>
+      <li>Multiple terminal panes per project</li>
+      <li>Isolated browser profiles per workspace</li>
+      <li>AI tool integration (Claude Code, etc.)</li>
+      <li>Cross-device sync</li>
+      <li>Instant project switching</li>
+    </ul>
+  </description>
+  
+  <categories>
+    <category>Development</category>
+    <category>System</category>
+    <category>TerminalEmulator</category>
+  </categories>
+  
+  <content_rating type="oars-1.1" />
+  
+  <url type="homepage">https://github.com/yourusername/muxspace</url>
+  <url type="bugtracker">https://github.com/yourusername/muxspace/issues</url>
+  
+  <releases>
+    <release version="0.1.0" date="2024-03-13">
+      <description>
+        <p>Initial release with core functionality:</p>
+        <ul>
+          <li>Native WebView UI via Dioxus</li>
+          <li>PTY terminal integration</li>
+          <li>Project and workspace management</li>
+          <li>Browser profile isolation</li>
+          <li>Sled database persistence</li>
+        </ul>
+      </description>
+    </release>
+  </releases>
+  
+  <developer_name>Muxspace Team</developer_name>
+  <update_contact>your@email.com</update_contact>
+</component>

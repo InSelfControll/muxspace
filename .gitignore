@@ -1,0 +1,31 @@
+# Rust build artifacts
+target/
+Cargo.lock
+**/*.rs.bk
+*.pdb
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+.a5c/logs/
+
+# Local config
+.claude/settings.local.json
+
+# Flatpak build
+.flatpak-builder/
+build-dir/
+
+# Temporary files
+*.tmp
+*.temp

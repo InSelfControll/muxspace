@@ -1,0 +1,38 @@
+app-id: com.muxspace.Muxspace
+runtime: org.freedesktop.Platform
+runtime-version: '23.08'
+sdk: org.freedesktop.Sdk
+sdk-extensions:
+  - org.freedesktop.Sdk.Extension.rust-stable
+command: muxspace-dioxus
+finish-args:
+  - --share=ipc
+  - --socket=x11
+  - --socket=wayland
+  - --socket=pulseaudio
+  - --share=network
+  - --device=dri
+  - --filesystem=home
+  - --filesystem=/tmp
+  - --talk-name=org.freedesktop.Notifications
+  - --talk-name=org.freedesktop.secrets
+  - --env=WEBKIT_DISABLE_COMPOSITING_MODE=1
+
+build-options:
+  append-path: /usr/lib/sdk/rust-stable/bin
+  env:
+    CARGO_HOME: /run/build/muxspace/cargo
+
+modules:
+  - name: muxspace
+    buildsystem: simple
+    build-commands:
+      - cargo --offline fetch --manifest-path Cargo.toml
+      - cargo --offline build --release
+      - install -Dm755 target/release/muxspace-dioxus /app/bin/muxspace-dioxus
+      - install -Dm644 flatpak/com.muxspace.Muxspace.desktop /app/share/applications/com.muxspace.Muxspace.desktop
+      - install -Dm644 flatpak/com.muxspace.Muxspace.metainfo.xml /app/share/metainfo/com.muxspace.Muxspace.metainfo.xml
+    sources:
+      - type: dir
+        path: ..
+      - cargo-sources.json

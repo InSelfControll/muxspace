@@ -1,0 +1,8 @@
+[Desktop Entry]
+Name=Muxspace
+Comment=Terminal Workspace Manager
+Type=Application
+Exec=muxspace-dioxus
+Icon=com.muxspace.Muxspace
+Categories=Development;System;TerminalEmulator;
+Terminal=false
