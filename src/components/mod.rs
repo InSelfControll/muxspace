@@ -29,8 +29,7 @@ pub fn app() -> Element {
     let window = dioxus_desktop::use_window();
     window.set_decorations(false);
     {
-        use glib::Cast;
-        use gtk::prelude::{GtkWindowExt, WidgetExt};
+        use gtk::prelude::{Cast, GtkWindowExt, WidgetExt};
         glib::idle_add_local_once(move || {
             for toplevel in gtk::Window::list_toplevels() {
                 if let Ok(win) = toplevel.downcast::<gtk::Window>() {
