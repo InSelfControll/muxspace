@@ -2,6 +2,8 @@
 
 A **forever-lean**, native terminal workspace manager built with Rust and Dioxus Desktop.
 
+![Muxspace Example](muxspace-example.png)
+
 ## Architecture Overview
 
 ```
