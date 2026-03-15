@@ -1,7 +1,0 @@
-Ensure the application seamlessly integrates with major browsers like Chrome and Firefox. This integration must preserve user session data, including cookies, active extensions, and password managers.
-
-Implement a cross-device synchronization feature to keep workspace states aligned across different machines.
-
-The system must support deep integration with AI coding assistants such as Claude Code, alongside full support for all CLI-based code editors and GUI-based IDEs.
-
-Enable parallel workflows by allowing users to fluidly navigate between different overarching projects. Within a single project, ensure seamless context switching between active terminals and GUI applications in the workspace window.
