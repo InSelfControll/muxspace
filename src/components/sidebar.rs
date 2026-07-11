@@ -14,11 +14,11 @@ pub fn sidebar() -> Element {
     rsx! {
         aside {
             class: "sidebar",
-            style: "width: 260px; background: #16162a; border-right: 1px solid #2e2e4a; display: flex; flex-direction: column; flex-shrink: 0;",
+            style: "width: 16.25rem; background: #16162a; border-right: 0.0625rem solid #2e2e4a; display: flex; flex-direction: column; flex-shrink: 0;",
 
             div {
                 class: "sidebar-header",
-                style: "padding: 1rem; border-bottom: 1px solid #2e2e4a;",
+                style: "padding: 1rem; border-bottom: 0.0625rem solid #2e2e4a;",
 
                 h2 {
                     style: "margin: 0; font-size: 1.2rem; color: #6366f1;",
@@ -57,7 +57,7 @@ pub fn sidebar() -> Element {
 
                 button {
                     class: "new-project-btn",
-                    style: "width: 100%; margin-top: 0.5rem; padding: 0.5rem; background: transparent; border: 1px dashed #2e2e4a; border-radius: 6px; color: #a0a0b0; cursor: pointer;",
+                    style: "width: 100%; margin-top: 0.5rem; padding: 0.5rem; background: transparent; border: 0.0625rem dashed #2e2e4a; border-radius: 0.375rem; color: #a0a0b0; cursor: pointer;",
                     onclick: move |_| {
                         state.write().show_create_project = true;
                     },
@@ -65,12 +65,27 @@ pub fn sidebar() -> Element {
                 }
             }
 
+            nav {
+                aria_label: "Application tools",
+                style: "padding: 0.75rem 1rem; border-top: 0.0625rem solid #2e2e4a; display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem;",
+                button {
+                    style: TOOL_BUTTON,
+                    onclick: move |_| state.write().show_hotkey_editor = true,
+                    "Hotkeys"
+                }
+                button {
+                    style: TOOL_BUTTON,
+                    onclick: move |_| state.write().show_shortcuts_help = true,
+                    "Shortcuts"
+                }
+            }
+
             div {
                 class: "sidebar-footer",
-                style: "padding: 1rem; border-top: 1px solid #2e2e4a; display: flex; gap: 0.5rem;",
+                style: "padding: 0 1rem 1rem; display: flex; gap: 0.5rem;",
 
                 button {
-                    style: "flex: 1; padding: 0.5rem; background: #1e1e3a; border: none; border-radius: 6px; color: #eaeaf0; cursor: pointer; font-size: 0.8rem;",
+                    style: "flex: 1; padding: 0.5rem; background: #1e1e3a; border: none; border-radius: 0.375rem; color: #eaeaf0; cursor: pointer; font-size: 0.8rem;",
                     onclick: move |_| {
                         // Export projects to JSON file
                         if let Ok(mgr) = SyncManager::new() {
@@ -87,7 +102,7 @@ pub fn sidebar() -> Element {
                     "Export"
                 }
                 button {
-                    style: "flex: 1; padding: 0.5rem; background: #1e1e3a; border: none; border-radius: 6px; color: #eaeaf0; cursor: pointer; font-size: 0.8rem;",
+                    style: "flex: 1; padding: 0.5rem; background: #1e1e3a; border: none; border-radius: 0.375rem; color: #eaeaf0; cursor: pointer; font-size: 0.8rem;",
                     onclick: move |_| {
                         // Import projects from JSON file
                         let path = dirs::home_dir()
@@ -110,6 +125,8 @@ pub fn sidebar() -> Element {
     }
 }
 
+const TOOL_BUTTON: &str = "padding: 0.5rem; background: #1e1e3a; border: 0.0625rem solid #2e2e4a; border-radius: 0.375rem; color: #c8c8d4; cursor: pointer; font-size: 0.78rem;";
+
 #[component]
 fn ProjectItem(project: crate::state::Project, active: bool) -> Element {
     let mut state = use_context::<Signal<AppState>>();
@@ -118,16 +135,16 @@ fn ProjectItem(project: crate::state::Project, active: bool) -> Element {
     let project_id_rename2 = project.id.clone();
     let project_id_del = project.id.clone();
     let mut editing = use_signal(|| false);
-    let mut edit_name = use_signal(|| String::new());
+    let mut edit_name = use_signal(String::new);
     let project_name_for_edit = project.name.clone();
 
     rsx! {
         div {
             class: if active { "project-item active" } else { "project-item" },
             style: if active {
-                "padding: 0.5rem 0.75rem; background: #6366f1; color: white; border-radius: 6px; cursor: pointer; display: flex; align-items: center; justify-content: space-between;"
+                "padding: 0.5rem 0.75rem; background: #6366f1; color: white; border-radius: 0.375rem; cursor: pointer; display: flex; align-items: center; justify-content: space-between;"
             } else {
-                "padding: 0.5rem 0.75rem; background: transparent; color: #eaeaf0; border-radius: 6px; cursor: pointer; display: flex; align-items: center; justify-content: space-between;"
+                "padding: 0.5rem 0.75rem; background: transparent; color: #eaeaf0; border-radius: 0.375rem; cursor: pointer; display: flex; align-items: center; justify-content: space-between;"
             },
 
             onclick: move |_| {
@@ -138,8 +155,8 @@ fn ProjectItem(project: crate::state::Project, active: bool) -> Element {
 
             if *editing.read() {
                 input {
-                    style: "flex: 1; padding: 0.15rem 0.4rem; background: #0f0f1a; border: 1px solid #6366f1; \
-                            border-radius: 4px; color: #eaeaf0; font-size: 0.85rem; outline: none;",
+                    style: "flex: 1; padding: 0.15rem 0.4rem; background: #0f0f1a; border: 0.0625rem solid #6366f1; \
+                            border-radius: 0.25rem; color: #eaeaf0; font-size: 0.85rem; outline: none;",
                     r#type: "text",
                     value: "{edit_name}",
                     autofocus: true,

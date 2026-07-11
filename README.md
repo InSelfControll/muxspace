@@ -39,7 +39,8 @@ A **forever-lean**, native terminal workspace manager built with Rust and Dioxus
 | **Project Management** | ✅ | Create, switch, persist projects |
 | **Workspace Panes** | ✅ | Multiple terminals per workspace |
 | **Sled Database** | ✅ | Zero-latency embedded persistence |
-| **Browser Integration** | ✅ | Embedded browser via mxproxy protocol |
+| **Browser Integration** | ✅ | Embedded WebKit browser with profile cookie import |
+| **Workspace Editor** | ✅ | Built-in text editor with explicit external-editor handoff |
 | **Configurable Hotkeys** | ✅ | Customize all keyboard shortcuts |
 | **Cross-Platform** | ✅ | Linux, macOS support |
 
@@ -50,7 +51,7 @@ A **forever-lean**, native terminal workspace manager built with Rust and Dioxus
 | **Global Hotkeys** | 🔄 | System-wide shortcuts |
 | **Cross-Device Sync** | 📋 | Git/S3-based delta sync |
 | **AI Integration** | 📋 | Claude Code, aider support |
-| **IDE Launch** | 📋 | VS Code, Zed auto-attach |
+| **External Editor Launch** | ✅ | Open current file or workspace in VS Code, Zed, Vim, and more |
 
 ## Building
 
@@ -70,13 +71,13 @@ sudo apt install libwebkit2gtk-4.1-dev libgtk-3-dev
 ### Development Build
 
 ```bash
-cargo run
+cargo run --features desktop
 ```
 
 ### Release Build
 
 ```bash
-cargo build --release
+cargo build --release --features desktop
 
 # Binary: target/release/muxspace
 ```
@@ -115,16 +116,19 @@ cargo bundle --release
 ├── src/
 │   ├── main.rs            # Entry point
 │   ├── components/        # UI components
-│   │   ├── mod.rs         # Main app layout
+│   │   ├── mod.rs         # Component module exports
 │   │   ├── sidebar.rs     # Navigation sidebar
-│   │   ├── terminal.rs    # Terminal pane
+│   │   ├── terminal.rs    # Terminal pane exports
 │   │   └── project_nav.rs # Quick project switcher
 │   ├── state/             # Application state
-│   │   └── mod.rs         # Projects, workspaces, AppState
+│   │   ├── types.rs       # Projects, workspaces, panes
+│   │   └── lifecycle.rs   # Pane/workspace cleanup
 │   ├── pty/               # Terminal PTY
-│   │   └── mod.rs         # PTY session, screen buffer, ANSI
+│   │   ├── manager.rs     # PTY manager
+│   │   └── screen.rs      # Screen buffer
 │   ├── browser/           # Browser orchestration
-│   │   └── mod.rs         # Chrome/Firefox launch, profiles
+│   │   ├── native.rs      # Desktop WebKit manager
+│   │   └── profile.rs     # Browser profile selection/import
 │   ├── sync/              # Persistence
 │   │   └── mod.rs         # Sled database, export/import
 │   └── hotkeys.rs         # Global hotkey support
