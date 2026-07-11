@@ -4,9 +4,10 @@
 //! scanning common config directories when xdg-settings is unavailable.
 
 use anyhow::{anyhow, Result};
+use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum BrowserKind {
     Chrome,
     Chromium,
@@ -14,6 +15,7 @@ pub enum BrowserKind {
     Brave,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct BrowserProfile {
     pub kind: BrowserKind,
     pub profile_dir: PathBuf,
@@ -53,51 +55,91 @@ pub fn detect_default_browser() -> Result<BrowserProfile> {
 // Per-browser profile resolution
 // ---------------------------------------------------------------------------
 
-fn chrome_profile() -> Result<BrowserProfile> {
-    let dir = config_dir().join("google-chrome/Default");
-    require_dir(&dir, "Chrome")?;
-    Ok(BrowserProfile { kind: BrowserKind::Chrome, profile_dir: dir })
+pub(crate) fn chrome_profile() -> Result<BrowserProfile> {
+    let dir = first_profile_dir(
+        &[
+            config_dir().join("google-chrome/Default"),
+            flatpak_dir().join("com.google.Chrome/config/google-chrome/Default"),
+            flatpak_dir().join("com.google.ChromeDev/config/google-chrome-unstable/Default"),
+        ],
+        "Chrome",
+    )?;
+    Ok(BrowserProfile {
+        kind: BrowserKind::Chrome,
+        profile_dir: dir,
+    })
 }
 
-fn chromium_profile() -> Result<BrowserProfile> {
-    let dir = config_dir().join("chromium/Default");
-    require_dir(&dir, "Chromium")?;
-    Ok(BrowserProfile { kind: BrowserKind::Chromium, profile_dir: dir })
+pub(crate) fn chromium_profile() -> Result<BrowserProfile> {
+    let dir = first_profile_dir(
+        &[
+            config_dir().join("chromium/Default"),
+            flatpak_dir().join("org.chromium.Chromium/config/chromium/Default"),
+        ],
+        "Chromium",
+    )?;
+    Ok(BrowserProfile {
+        kind: BrowserKind::Chromium,
+        profile_dir: dir,
+    })
 }
 
-fn brave_profile() -> Result<BrowserProfile> {
-    let dir = config_dir().join("BraveSoftware/Brave-Browser/Default");
-    require_dir(&dir, "Brave")?;
-    Ok(BrowserProfile { kind: BrowserKind::Brave, profile_dir: dir })
+pub(crate) fn brave_profile() -> Result<BrowserProfile> {
+    let dir = first_profile_dir(
+        &[
+            config_dir().join("BraveSoftware/Brave-Browser/Default"),
+            flatpak_dir().join("com.brave.Browser/config/BraveSoftware/Brave-Browser/Default"),
+        ],
+        "Brave",
+    )?;
+    Ok(BrowserProfile {
+        kind: BrowserKind::Brave,
+        profile_dir: dir,
+    })
 }
 
-fn firefox_profile() -> Result<BrowserProfile> {
-    let ff_dir = dirs::home_dir()
-        .unwrap_or_default()
-        .join(".mozilla/firefox");
-
-    // Modern Firefox uses *.default-release; older ones use *.default
-    for pattern in ["*.default-release", "*.default"] {
-        let glob_expr = format!("{}/{pattern}", ff_dir.display());
-        if let Some(Ok(path)) = glob::glob(&glob_expr).ok().and_then(|mut g| g.next()) {
-            if path.is_dir() {
-                return Ok(BrowserProfile {
-                    kind: BrowserKind::Firefox,
-                    profile_dir: path,
-                });
-            }
-        }
-    }
-
-    Err(anyhow!("No Firefox profile directory found"))
+pub(crate) fn firefox_profile() -> Result<BrowserProfile> {
+    let home = dirs::home_dir().unwrap_or_default();
+    let roots = [
+        home.join(".mozilla/firefox"),
+        flatpak_dir().join("org.mozilla.firefox/.mozilla/firefox"),
+    ];
+    let mut profiles = roots
+        .iter()
+        .filter_map(|root| std::fs::read_dir(root).ok())
+        .flatten()
+        .filter_map(Result::ok)
+        .map(|entry| entry.path())
+        .filter(|path| path.join("cookies.sqlite").is_file())
+        .collect::<Vec<_>>();
+    profiles.sort_by_key(|path| {
+        let name = path
+            .file_name()
+            .and_then(|name| name.to_str())
+            .unwrap_or("");
+        (
+            !name.ends_with(".default-release"),
+            !name.ends_with(".default"),
+        )
+    });
+    let profile_dir = profiles
+        .into_iter()
+        .next()
+        .ok_or_else(|| anyhow!("No Firefox profile with cookies found"))?;
+    Ok(BrowserProfile {
+        kind: BrowserKind::Firefox,
+        profile_dir,
+    })
 }
 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 
+type BrowserResolver = fn() -> Result<BrowserProfile>;
+
 fn detect_by_installed() -> Result<BrowserProfile> {
-    let resolvers: &[(&str, fn() -> Result<BrowserProfile>)] = &[
+    let resolvers: &[(&str, BrowserResolver)] = &[
         ("Chrome", chrome_profile),
         ("Chromium", chromium_profile),
         ("Brave", brave_profile),
@@ -122,10 +164,14 @@ fn config_dir() -> PathBuf {
     })
 }
 
-fn require_dir(dir: &PathBuf, label: &str) -> Result<()> {
-    if dir.is_dir() {
-        Ok(())
-    } else {
-        Err(anyhow!("{label} profile not found: {}", dir.display()))
-    }
+fn flatpak_dir() -> PathBuf {
+    dirs::home_dir().unwrap_or_default().join(".var/app")
+}
+
+fn first_profile_dir(candidates: &[PathBuf], label: &str) -> Result<PathBuf> {
+    candidates
+        .iter()
+        .find(|dir| dir.is_dir())
+        .cloned()
+        .ok_or_else(|| anyhow!("{label} profile not found"))
 }

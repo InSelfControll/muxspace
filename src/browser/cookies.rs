@@ -5,15 +5,20 @@
 //! v11 (keyring) encryption — we handle v10 and skip v11 with a warning.
 
 use anyhow::Result;
+use std::fs::OpenOptions;
 use std::io::Write;
+#[cfg(unix)]
+use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
 use std::path::Path;
 
 use super::profile::{BrowserKind, BrowserProfile};
+use super::sqlite_snapshot::SqliteSnapshot;
 
 struct RawCookie {
     domain: String,
     path: String,
     secure: bool,
+    http_only: bool,
     expiry: i64,
     name: String,
     value: String,
@@ -48,18 +53,10 @@ fn read_firefox_cookies(profile_dir: &Path) -> Result<Vec<RawCookie>> {
         return Ok(vec![]);
     }
 
-    // Copy to temp file — Firefox holds an exclusive lock while running.
-    let temp = std::env::temp_dir().join("muxspace-ff-cookies.sqlite");
-    std::fs::copy(&db_path, &temp)?;
+    let (conn, _snapshot) = SqliteSnapshot::open(&db_path)?;
 
-    let conn = rusqlite::Connection::open_with_flags(
-        &temp,
-        rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
-    )?;
-
-    let mut stmt = conn.prepare(
-        "SELECT name, value, host, path, expiry, isSecure FROM moz_cookies",
-    )?;
+    let mut stmt = conn
+        .prepare("SELECT name, value, host, path, expiry, isSecure, isHttpOnly FROM moz_cookies")?;
 
     let cookies: Vec<RawCookie> = stmt
         .query_map([], |row| {
@@ -70,12 +67,12 @@ fn read_firefox_cookies(profile_dir: &Path) -> Result<Vec<RawCookie>> {
                 path: row.get(3)?,
                 expiry: row.get(4)?,
                 secure: row.get::<_, i32>(5)? != 0,
+                http_only: row.get::<_, i32>(6)? != 0,
             })
         })?
         .filter_map(|r| r.ok())
         .collect();
 
-    let _ = std::fs::remove_file(&temp);
     tracing::info!("[Cookies] Read {} Firefox cookies", cookies.len());
     Ok(cookies)
 }
@@ -91,17 +88,10 @@ fn read_chrome_cookies(profile_dir: &Path) -> Result<Vec<RawCookie>> {
         return Ok(vec![]);
     }
 
-    // Copy to temp file — Chrome also holds a lock.
-    let temp = std::env::temp_dir().join("muxspace-chrome-cookies.sqlite");
-    std::fs::copy(&db_path, &temp)?;
-
-    let conn = rusqlite::Connection::open_with_flags(
-        &temp,
-        rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
-    )?;
+    let (conn, _snapshot) = SqliteSnapshot::open(&db_path)?;
 
     let mut stmt = conn.prepare(
-        "SELECT name, value, encrypted_value, host_key, path, expires_utc, is_secure \
+        "SELECT name, value, encrypted_value, host_key, path, expires_utc, is_secure, is_httponly \
          FROM cookies",
     )?;
 
@@ -117,11 +107,13 @@ fn read_chrome_cookies(profile_dir: &Path) -> Result<Vec<RawCookie>> {
             row.get::<_, String>(4)?,
             row.get::<_, i64>(5)?,
             row.get::<_, i32>(6)?,
+            row.get::<_, i32>(7)?,
         ))
     })?;
 
     for row in rows.flatten() {
-        let (name, value, encrypted_value, domain, path, expires_utc, is_secure) = row;
+        let (name, value, encrypted_value, domain, path, expires_utc, is_secure, is_http_only) =
+            row;
 
         // Chrome timestamps: microseconds since 1601-01-01 (Windows epoch)
         let expiry = if expires_utc > 0 {
@@ -145,15 +137,19 @@ fn read_chrome_cookies(profile_dir: &Path) -> Result<Vec<RawCookie>> {
             continue;
         };
 
-        cookies.push(RawCookie { domain, path, secure: is_secure != 0, expiry, name, value: final_value });
+        cookies.push(RawCookie {
+            domain,
+            path,
+            secure: is_secure != 0,
+            http_only: is_http_only != 0,
+            expiry,
+            name,
+            value: final_value,
+        });
     }
 
-    let _ = std::fs::remove_file(&temp);
-
     if skipped_v11 > 0 {
-        tracing::warn!(
-            "[Cookies] Skipped {skipped_v11} Chrome cookies (v11 keyring encryption)"
-        );
+        tracing::warn!("[Cookies] Skipped {skipped_v11} Chrome cookies (v11 keyring encryption)");
     }
     tracing::info!("[Cookies] Read {} Chrome cookies", cookies.len());
     Ok(cookies)
@@ -203,17 +199,44 @@ fn write_netscape_cookies(cookies: &[RawCookie], path: &Path) -> Result<()> {
         std::fs::create_dir_all(parent)?;
     }
 
-    let mut f = std::fs::File::create(path)?;
+    let mut options = OpenOptions::new();
+    options.create(true).truncate(true).write(true);
+    #[cfg(unix)]
+    options.mode(0o600);
+    let mut f = options.open(path)?;
+    #[cfg(unix)]
+    f.set_permissions(std::fs::Permissions::from_mode(0o600))?;
     writeln!(f, "# Netscape HTTP Cookie File")?;
     writeln!(f, "# Imported by Muxspace from user's default browser")?;
     writeln!(f)?;
 
     for c in cookies {
-        let subdomain = if c.domain.starts_with('.') { "TRUE" } else { "FALSE" };
+        if [&c.domain, &c.path, &c.name, &c.value]
+            .iter()
+            .any(|field| field.chars().any(|ch| matches!(ch, '\t' | '\r' | '\n')))
+        {
+            continue;
+        }
+        let domain = if c.http_only {
+            format!("#HttpOnly_{}", c.domain)
+        } else {
+            c.domain.clone()
+        };
+        let subdomain = if c.domain.starts_with('.') {
+            "TRUE"
+        } else {
+            "FALSE"
+        };
         let secure = if c.secure { "TRUE" } else { "FALSE" };
-        writeln!(f, "{}\t{}\t{}\t{}\t{}\t{}\t{}",
-            c.domain, subdomain, c.path, secure, c.expiry, c.name, c.value)?;
+        writeln!(
+            f,
+            "{}\t{}\t{}\t{}\t{}\t{}\t{}",
+            domain, subdomain, c.path, secure, c.expiry, c.name, c.value
+        )?;
     }
 
     Ok(())
 }
+
+#[cfg(test)]
+mod tests;

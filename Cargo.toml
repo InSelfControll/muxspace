@@ -6,10 +6,15 @@ description = "A native terminal workspace manager built with Rust and Dioxus De
 license = "MIT"
 repository = "https://github.com/InSelfControll/muxspace"
 
+[[bin]]
+name = "muxspace"
+path = "src/main.rs"
+required-features = ["desktop"]
+
 [dependencies]
 # Dioxus - Native WebView UI
-dioxus = { version = "0.5", features = ["desktop"] }
-dioxus-desktop = { version = "0.5", features = ["transparent"] }
+dioxus = { version = "0.5", features = ["desktop"], optional = true }
+dioxus-desktop = { version = "0.5", features = ["transparent"], optional = true }
 
 # Terminal & PTY
 portable-pty = "0.8"
@@ -17,6 +22,7 @@ vte = "0.13"
 
 # Async runtime
 tokio = { version = "1", features = ["full"] }
+notify = "6"
 futures = "0.3"
 
 # Database
@@ -45,16 +51,16 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 chrono = "0.4"
 
 # Native file dialogs
-rfd = "0.15"
+rfd = { version = "0.14.1", optional = true }
 
 # System
 libc = "0.2"
 
 # GTK + WebKit — embed real browser WebViews inside the app window via GtkOverlay
-glib = { version = "0.20", features = ["v2_68"] }
-gtk = "0.18"
-gdk = "0.18"
-webkit2gtk = { version = "2.0", features = ["v2_22"] }
+glib = { version = "0.20", features = ["v2_68"], optional = true }
+gtk = { version = "0.18", optional = true }
+gdk = { version = "0.18", optional = true }
+webkit2gtk = { version = "2.0", features = ["v2_22"], optional = true }
 
 # Browser profile integration — import cookies & detect extensions
 rusqlite = { version = "0.31", features = ["bundled"] }
@@ -68,3 +74,12 @@ sha1 = "0.10"
 
 [features]
 default = []
+desktop = [
+    "dep:dioxus",
+    "dep:dioxus-desktop",
+    "dep:gdk",
+    "dep:glib",
+    "dep:gtk",
+    "dep:rfd",
+    "dep:webkit2gtk",
+]

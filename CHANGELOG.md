@@ -4,6 +4,41 @@ All notable changes to Muxspace are documented in this file.
 
 ## [Unreleased]
 
+### Changed
+
+- Removed experimental native editor window embedding and X11 helper dependencies. Editor panes now use the built-in text editor plus explicit "Open in app" handoff.
+- Browser selection is persisted on browser panes and used for profile import instead of being a cosmetic modal choice.
+- Browser panes now use a main-thread-local WebKit manager instead of marking GTK objects as thread-safe.
+- Desktop UI/native WebKit dependencies are behind the `desktop` feature; `cargo test --lib` now runs without GTK/WebKit system libraries.
+- Split Rust modules so every `src/**/*.rs` file stays at or below 250 lines.
+- Added Nix development dependencies for GIO TLS and GStreamer browser media support.
+
+### Fixed
+
+- Editor file access is constrained to the workspace root, rejects oversized or non-text files, protects dirty buffers when switching files, and saves atomically while preserving Unix permissions.
+- Pane, workspace, and project cleanup now share a centralized pane lifecycle path and workspace removal bounds-checks its index.
+- Persistence and hotkey save failures are logged instead of being silently discarded.
+- Rebuilt the desktop shell as one responsive layout and removed duplicate application chrome.
+- Corrected KDE/Wayland GTK DPI initialization before WebKit startup so app and website CSS viewports use normal positive dimensions.
+- Fixed browser panes loading at `1x1`, incorrect overlay positioning, pointer interception, blank DMA-BUF rendering, and stale bounds after tab changes.
+- Enabled HTTPS through the GIO GnuTLS backend and added WebKit media codecs and sinks.
+- Refreshed Firefox/Chromium authentication cookies on startup, preserved `HttpOnly`, supported Flatpak profiles, and read live Firefox SQLite/WAL data through a lock-safe snapshot.
+- Restricted imported browser cookie files to owner-only `0600` permissions.
+- Removed the Chromium user-agent spoof so sites receive bundles compatible with WebKit.
+- Made browser tab title truncation Unicode-safe.
+- Updated AppImage and Flatpak builds for the current binary name and desktop feature.
+
+### Security
+
+- Updated `crossbeam-epoch` from 0.9.18 to 0.9.20 to resolve `RUSTSEC-2026-0204`.
+- Removed the unsafe `Send` implementation from the GTK/WebKit browser manager.
+- Added RustSec auditing to CI and weekly Cargo/GitHub Actions Dependabot updates.
+- Scanned the pending release for committed credentials; no secrets were found.
+
+### Tests
+
+- Added coverage for pane cleanup decisions, workspace removal bounds, safe editor file checks, lock-safe SQLite snapshots, high-DPI browser geometry, runtime TLS discovery, and cookie-file permissions.
+
 ## [0.3.0] — 2026-03-15
 
 ### Added

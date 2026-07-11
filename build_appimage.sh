@@ -9,7 +9,7 @@ if ! command -v cargo-appimage &> /dev/null; then
 fi
 
 # Build release
-cargo build --release
+cargo build --release --features desktop
 
 # Create AppDir
 mkdir -p AppDir/usr/bin
@@ -17,7 +17,7 @@ mkdir -p AppDir/usr/share/applications
 mkdir -p AppDir/usr/share/icons/hicolor/256x256/apps
 
 # Copy binary
-cp target/release/muxspace-dioxus AppDir/usr/bin/muxspace
+cp target/release/muxspace AppDir/usr/bin/muxspace
 
 # Create desktop entry
 cat > AppDir/usr/share/applications/muxspace.desktop << 'EOF'

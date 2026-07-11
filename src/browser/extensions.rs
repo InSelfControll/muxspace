@@ -51,7 +51,7 @@ fn detect_chrome_extensions(profile_dir: &Path) -> Result<Vec<ExtensionInfo>> {
         // Each extension has version subdirectories — pick the latest
         let mut versions: Vec<_> = std::fs::read_dir(entry.path())?
             .filter_map(|e| e.ok())
-            .filter(|e| e.file_type().map_or(false, |t| t.is_dir()))
+            .filter(|e| e.file_type().is_ok_and(|t| t.is_dir()))
             .collect();
         versions.sort_by_key(|e| e.file_name());
 
@@ -124,7 +124,11 @@ fn read_firefox_extensions_json(profile_dir: &Path) -> Result<Vec<ExtensionInfo>
 
     if let Some(addons) = data.get("addons").and_then(|a| a.as_array()) {
         for addon in addons {
-            let id = addon.get("id").and_then(|v| v.as_str()).unwrap_or("").to_string();
+            let id = addon
+                .get("id")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
             if id.is_empty() {
                 continue;
             }
@@ -149,7 +153,12 @@ fn read_firefox_extensions_json(profile_dir: &Path) -> Result<Vec<ExtensionInfo>
                 .unwrap_or("")
                 .to_string();
 
-            extensions.push(ExtensionInfo { id, name, version, description });
+            extensions.push(ExtensionInfo {
+                id,
+                name,
+                version,
+                description,
+            });
         }
     }
 

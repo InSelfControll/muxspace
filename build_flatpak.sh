@@ -3,8 +3,6 @@ set -e
 
 echo "Building Muxspace Flatpak..."
 
-# Generate cargo-sources.json
-cd ..
 if ! command -v python3 &> /dev/null; then
     echo "Python3 is required for Flatpak build"
     exit 1
@@ -17,10 +15,10 @@ if [ ! -f flatpak-cargo-generator.py ]; then
 fi
 
 # Generate cargo sources
-python3 flatpak-cargo-generator.py Cargo.lock -o dioxus/flatpak/cargo-sources.json
+python3 flatpak-cargo-generator.py Cargo.lock -o flatpak/cargo-sources.json
 
 # Build Flatpak
-cd dioxus/flatpak
+cd flatpak
 flatpak-builder --force-clean build-dir com.muxspace.Muxspace.yml
 
 # Create repo
